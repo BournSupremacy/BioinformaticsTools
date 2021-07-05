@@ -1,34 +1,39 @@
-// Created by Gerrit Botha (grbot)
-
 #!/usr/bin/env nextflow
 
-in_files = file(params.in_files)
+// Created by Gerrit Botha (grbot), edited by me (BournSupremacy)
+// Get sample info from sample sheet
+// Minimum information that is needed in the sample sheet are SampleID and fasta file location of that sample
+Channel.fromPath( file(params.sample_sheet) )
+        .splitCsv(header: true, sep: '\t')
+        .map{row ->
+            def sample_id = row['SampleID']
+            def fasta_file = file(row['fasta'])
+            return [ sample_id, fasta_file ]
+        }.set{samples}
+
 out_dir = file(params.out_dir)
 ref = file(params.ref)
 nt = params.nt
 
-Channel.fromPath(in_files)
-        .set { fastas }
-
 process getQuast{
-    tag { "${params.project_name}.${fasta}.gQ" }
+    tag { "${params.project_name}.${sample_id}.gQ" }
     cpus { "${nt}" }
-    publishDir "${out_dir}/${fasta}", mode: 'copy', overwrite: false
+    publishDir "${out_dir}/${sample_id}", mode: 'copy', overwrite: false
    
     input:
-	  file (fasta) from fastas
+	  set val(sample_id), file(fasta_file) from samples
 
     output:
-	  file ("*") into quast_files
+	  set val(sample_id), file ("*") into quast_files
 
     script:
     """
     quast -r ${ref} \
-    -o ${fasta.simpleName}.quast \
-    --eukaryote \
+    -o ${sample_id}.quast \
+    --fragmented --eukaryote \
     --conserved-genes-finding \
     -t ${task.cpus} \
-    ${fasta}
+    ${fasta_file}
     """
 }
 
@@ -38,6 +43,7 @@ process runMultiQC{
 
     input:
         file('*') from quast_files.collect()
+	
     output:
         file('multiqc_report.html')
 
